@@ -59,38 +59,53 @@ def generate_code(request):
             'detail': traceback.format_exc()
         }, status=500)
 
-@api_view(['GET'])
+@api_view(['GET', 'PUT'])
 def manage_files(request):
-    logger.info("Received manage_files request")
+    logger.info(f"Received {request.method} request to manage_files")
     try:
         base_dir = 'generated_files'
         
-        file_name = request.query_params.get('file')
-        logger.debug(f"Requested file: {file_name}")
-        
-        if file_name:
-            # Read specific file
+        if request.method == 'GET':
+            file_name = request.query_params.get('file')
+            logger.debug(f"Requested file: {file_name}")
+            
+            if file_name:
+                file_path = os.path.join(base_dir, file_name)
+                logger.debug(f"Looking for file at: {file_path}")
+                
+                if os.path.exists(file_path):
+                    with open(file_path, 'r') as f:
+                        content = f.read()
+                    logger.info(f"Successfully read file: {file_name}")
+                    return Response({'content': content})
+                
+                logger.warning(f"File not found: {file_name}")
+                return Response({'error': 'File not found'}, status=404)
+            
+            if os.path.exists(base_dir):
+                files = os.listdir(base_dir)
+                logger.info(f"Found files: {files}")
+                return Response({'files': files})
+            
+            return Response({'files': []})
+            
+        elif request.method == 'PUT':
+            file_name = request.data.get('file')
+            content = request.data.get('content')
+            
+            if not file_name or content is None:
+                logger.warning("Missing file name or content in PUT request")
+                return Response({'error': 'File name and content are required'}, status=400)
+            
             file_path = os.path.join(base_dir, file_name)
-            logger.debug(f"Looking for file at: {file_path}")
+            logger.debug(f"Updating file: {file_path}")
             
-            if os.path.exists(file_path):
-                with open(file_path, 'r') as f:
-                    content = f.read()
-                logger.info(f"Successfully read file: {file_name}")
-                return Response({'content': content})
+            with open(file_path, 'w') as f:
+                f.write(content)
             
-            logger.warning(f"File not found: {file_name}")
-            return Response({'error': 'File not found'}, status=404)
-        
-        # List all files
-        if os.path.exists(base_dir):
-            files = os.listdir(base_dir)
-            logger.info(f"Found files: {files}")
-            return Response({'files': files})
-        
-        logger.warning("Generated files directory not found")
-        return Response({'files': []})
-        
+            logger.info(f"Successfully updated file: {file_name}")
+            return Response({'message': f'File {file_name} updated successfully'})
+            
     except Exception as e:
         logger.error(f"Error in manage_files: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
@@ -112,8 +127,8 @@ def preview_file(request, filename):
             content = f.read()
         
         response = HttpResponse(content, content_type='text/html')
-        response['X-Frame-Options'] = 'ALLOW-FROM http://localhost:3000'
-        response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        # Use correct X-Frame-Options value
+        response['Content-Security-Policy'] = "frame-ancestors 'self' http://localhost:3000"
         return response
         
     except Exception as e:
